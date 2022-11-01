@@ -309,6 +309,13 @@ static const ModelInfo info_MX = {0.11,
                                   -3.14159265, 
                                   3.14159265};
 
+static const ModelInfo info_MX12W = {0.916,
+                                  0,
+                                  2048,
+                                  4096,
+                                  -3.14159265, 
+                                  3.14159265};
+
 //---------------------------------------------------------
 // MX Protocol 2 servos - (num == MX_28_2)
 //---------------------------------------------------------
@@ -1536,9 +1543,13 @@ const ModelInfo *DynamixelItem::getModelInfo(uint16_t model_number)
   {
     info = &info_EX;
   }
-  else if (num == MX_12W || num == MX_28)
+  else if (num == MX_28)
   {
     info = &info_MX;
+  }
+  else if (num == MX_12W)
+  {
+    info = &info_MX12W;
   }
   else if (num == MX_64 || num == MX_106)
   {
