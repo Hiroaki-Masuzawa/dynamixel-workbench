@@ -97,6 +97,10 @@ class DynamixelController
 
   bool is_moving_;
 
+  bool omni_mode_;
+  std::vector<int> actuator_id_;
+  std::vector<double> actuator_mounting_angle_;
+
  public:
   DynamixelController();
   ~DynamixelController();

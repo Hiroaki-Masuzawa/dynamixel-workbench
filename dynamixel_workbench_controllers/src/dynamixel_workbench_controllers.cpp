@@ -17,6 +17,7 @@
 /* Authors: Taehun Lim (Darby) */
 
 #include "dynamixel_workbench_controllers/dynamixel_workbench_controllers.h"
+#include<math.h>
 
 DynamixelController::DynamixelController()
   :node_handle_(""),
@@ -26,7 +27,8 @@ DynamixelController::DynamixelController()
    use_moveit_(false),
    wheel_separation_(0.0f),
    wheel_radius_(0.0f),
-   is_moving_(false)
+   is_moving_(false),
+   omni_mode_(false)
 {
   is_joint_state_topic_ = priv_node_handle_.param<bool>("use_joint_states_topic", true);
   is_cmd_vel_topic_ = priv_node_handle_.param<bool>("use_cmd_vel_topic", false);
@@ -40,8 +42,22 @@ DynamixelController::DynamixelController()
   {
     wheel_separation_ = priv_node_handle_.param<double>("mobile_robot_config/seperation_between_wheels", 0.0);
     wheel_radius_ = priv_node_handle_.param<double>("mobile_robot_config/radius_of_wheel", 0.0);
+    omni_mode_ = priv_node_handle_.param<bool>("mobile_robot_config/omni_mode", false);
+    if(omni_mode_)
+    {
+      XmlRpc::XmlRpcValue actuator_id;
+      XmlRpc::XmlRpcValue actuator_mounting_angle;
+      priv_node_handle_.getParam("mobile_robot_config/actuator_id", actuator_id);
+      priv_node_handle_.getParam("mobile_robot_config/actuator_mounting_angle", actuator_mounting_angle);
+      for(int i=0; i<actuator_id.size(); i++)
+      {
+        int actuator_idx = static_cast<int>(actuator_id[i]);
+        double angle = static_cast<double>(actuator_mounting_angle[i]);
+        actuator_id_.push_back(actuator_idx);
+        actuator_mounting_angle_.push_back(angle);
+      }
+    }
   }
-
   dxl_wb_ = new DynamixelWorkbench;
   jnt_tra_ = new JointTrajectory;
   jnt_tra_msg_ = new trajectory_msgs::JointTrajectory;
@@ -518,7 +534,8 @@ void DynamixelController::commandVelocityCallback(const geometry_msgs::Twist::Co
   const uint8_t LEFT = 0;
   const uint8_t RIGHT = 1;
 
-  double robot_lin_vel = msg->linear.x;
+  double robot_lin_vel_x = msg->linear.x;
+  double robot_lin_vel_y = msg->linear.y;
   double robot_ang_vel = msg->angular.z;
 
   uint8_t id_array[dynamixel_.size()];
@@ -536,9 +553,31 @@ void DynamixelController::commandVelocityCallback(const geometry_msgs::Twist::Co
 //       = r * ((RPM * Goal_Velocity) * 0.10472)		=> Goal_Velocity = V / (r * RPM * 0.10472) = V * VELOCITY_CONSTATNE_VALUE
 
   double velocity_constant_value = 1 / (wheel_radius_ * rpm * 0.10472);
+  
+  if(omni_mode_)
+  {
+    for(int i=0; i<actuator_id_.size(); i++)
+    {
+      double angle = actuator_mounting_angle_[i];
+      // int actuator_idx = actuator_id_[i]-1;
+      int actuator_idx = 0;
+      for(int j=0;j<dynamixel_.size();j++)
+      {
+        if(id_array[j]== actuator_id_[i])
+        {
+          actuator_idx = j;
+          break;
+        }
 
-  wheel_velocity[LEFT]  = robot_lin_vel - (robot_ang_vel * wheel_separation_ / 2);
-  wheel_velocity[RIGHT] = robot_lin_vel + (robot_ang_vel * wheel_separation_ / 2);
+      }
+      wheel_velocity[actuator_idx] = -robot_lin_vel_x * cos(angle) +  robot_lin_vel_y * sin(angle) - (robot_ang_vel * wheel_separation_ / 2);
+    }
+  }
+  else
+  {
+    wheel_velocity[LEFT]  = robot_lin_vel_x - (robot_ang_vel * wheel_separation_ / 2);
+    wheel_velocity[RIGHT] = robot_lin_vel_x + (robot_ang_vel * wheel_separation_ / 2);
+  }
 
   if (dxl_wb_->getProtocolVersion() == 2.0f)
   {
@@ -560,13 +599,24 @@ void DynamixelController::commandVelocityCallback(const geometry_msgs::Twist::Co
   }
   else if (dxl_wb_->getProtocolVersion() == 1.0f)
   {
-    if (wheel_velocity[LEFT] == 0.0f) dynamixel_velocity[LEFT] = 0;
-    else if (wheel_velocity[LEFT] < 0.0f) dynamixel_velocity[LEFT] = ((-1.0f) * wheel_velocity[LEFT]) * velocity_constant_value + 1023;
-    else if (wheel_velocity[LEFT] > 0.0f) dynamixel_velocity[LEFT] = (wheel_velocity[LEFT] * velocity_constant_value);
+    if(omni_mode_){
+      for(int i=0; i<actuator_id_.size(); i++)
+      {
+        if (wheel_velocity[i] == 0.0f) dynamixel_velocity[i] = 0;
+        else if (wheel_velocity[i] < 0.0f) dynamixel_velocity[i] = ((-1.0f) * wheel_velocity[i]) * velocity_constant_value + 1024;
+        else if (wheel_velocity[i] > 0.0f) dynamixel_velocity[i] = (wheel_velocity[i] * velocity_constant_value);
+      }
+    }
+    else
+    {
+      if (wheel_velocity[LEFT] == 0.0f) dynamixel_velocity[LEFT] = 0;
+      else if (wheel_velocity[LEFT] < 0.0f) dynamixel_velocity[LEFT] = ((-1.0f) * wheel_velocity[LEFT]) * velocity_constant_value + 1023;
+      else if (wheel_velocity[LEFT] > 0.0f) dynamixel_velocity[LEFT] = (wheel_velocity[LEFT] * velocity_constant_value);
 
-    if (wheel_velocity[RIGHT] == 0.0f) dynamixel_velocity[RIGHT] = 0;
-    else if (wheel_velocity[RIGHT] < 0.0f)  dynamixel_velocity[RIGHT] = ((-1.0f) * wheel_velocity[RIGHT] * velocity_constant_value) + 1023;
-    else if (wheel_velocity[RIGHT] > 0.0f)  dynamixel_velocity[RIGHT] = (wheel_velocity[RIGHT] * velocity_constant_value);
+      if (wheel_velocity[RIGHT] == 0.0f) dynamixel_velocity[RIGHT] = 0;
+      else if (wheel_velocity[RIGHT] < 0.0f)  dynamixel_velocity[RIGHT] = ((-1.0f) * wheel_velocity[RIGHT] * velocity_constant_value) + 1023;
+      else if (wheel_velocity[RIGHT] > 0.0f)  dynamixel_velocity[RIGHT] = (wheel_velocity[RIGHT] * velocity_constant_value);
+    }
   }
 
   result = dxl_wb_->syncWrite(SYNC_WRITE_HANDLER_FOR_GOAL_VELOCITY, id_array, dynamixel_.size(), dynamixel_velocity, 1, &log);
