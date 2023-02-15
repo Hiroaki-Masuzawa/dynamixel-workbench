@@ -593,8 +593,16 @@ void DynamixelController::commandVelocityCallback(const geometry_msgs::Twist::Co
     }
     else
     {
-      dynamixel_velocity[LEFT]  = wheel_velocity[LEFT] * velocity_constant_value;
-      dynamixel_velocity[RIGHT] = wheel_velocity[RIGHT] * velocity_constant_value;
+      if(omni_mode_){
+        for(int i=0; i<actuator_id_.size(); i++){
+          dynamixel_velocity[i]  = wheel_velocity[i] * velocity_constant_value;
+        }
+      }
+      else
+      {
+        dynamixel_velocity[LEFT]  = wheel_velocity[LEFT] * velocity_constant_value;
+        dynamixel_velocity[RIGHT] = wheel_velocity[RIGHT] * velocity_constant_value;
+      }
     }
   }
   else if (dxl_wb_->getProtocolVersion() == 1.0f)
