@@ -560,7 +560,7 @@ void DynamixelController::commandVelocityCallback(const geometry_msgs::Twist::Co
     {
       double angle = actuator_mounting_angle_[i];
       // int actuator_idx = actuator_id_[i]-1;
-      int actuator_idx = 0;
+      int actuator_idx = -1;
       for(int j=0;j<dynamixel_.size();j++)
       {
         if(id_array[j]== actuator_id_[i])
@@ -570,7 +570,10 @@ void DynamixelController::commandVelocityCallback(const geometry_msgs::Twist::Co
         }
 
       }
-      wheel_velocity[actuator_idx] = -robot_lin_vel_x * cos(angle) +  robot_lin_vel_y * sin(angle) - (robot_ang_vel * wheel_separation_ / 2);
+      if (actuator_idx != -1)
+      {
+        wheel_velocity[actuator_idx] = -robot_lin_vel_x * cos(angle) +  robot_lin_vel_y * sin(angle) - (robot_ang_vel * wheel_separation_ / 2);
+      }
     }
   }
   else
