@@ -539,7 +539,9 @@ void DynamixelController::commandVelocityCallback(const geometry_msgs::Twist::Co
   double robot_ang_vel = msg->angular.z;
 
   uint8_t id_array[dynamixel_.size()];
+  uint8_t snd_id_array[dynamixel_.size()];
   uint8_t id_cnt = 0;
+  uint8_t snd_id_cnt = 0;
 
   float rpm = 0.0;
   for (auto const& dxl:dynamixel_)
@@ -572,7 +574,9 @@ void DynamixelController::commandVelocityCallback(const geometry_msgs::Twist::Co
       }
       if (actuator_idx != -1)
       {
-        wheel_velocity[actuator_idx] = -robot_lin_vel_x * cos(angle) +  robot_lin_vel_y * sin(angle) - (robot_ang_vel * wheel_separation_ / 2);
+        wheel_velocity[snd_id_cnt] = -robot_lin_vel_x * cos(angle) +  robot_lin_vel_y * sin(angle) - (robot_ang_vel * wheel_separation_ / 2);
+        snd_id_array[snd_id_cnt] = id_array[actuator_idx];
+        snd_id_cnt++;
       }
     }
   }
@@ -597,7 +601,7 @@ void DynamixelController::commandVelocityCallback(const geometry_msgs::Twist::Co
     else
     {
       if(omni_mode_){
-        for(int i=0; i<actuator_id_.size(); i++){
+        for(int i=0; i<snd_id_cnt; i++){
           dynamixel_velocity[i]  = wheel_velocity[i] * velocity_constant_value;
         }
       }
@@ -611,7 +615,7 @@ void DynamixelController::commandVelocityCallback(const geometry_msgs::Twist::Co
   else if (dxl_wb_->getProtocolVersion() == 1.0f)
   {
     if(omni_mode_){
-      for(int i=0; i<actuator_id_.size(); i++)
+      for(int i=0; i<snd_id_cnt; i++)
       {
         if (wheel_velocity[i] == 0.0f) dynamixel_velocity[i] = 0;
         else if (wheel_velocity[i] < 0.0f) dynamixel_velocity[i] = ((-1.0f) * wheel_velocity[i]) * velocity_constant_value + 1024;
@@ -630,7 +634,7 @@ void DynamixelController::commandVelocityCallback(const geometry_msgs::Twist::Co
     }
   }
 
-  result = dxl_wb_->syncWrite(SYNC_WRITE_HANDLER_FOR_GOAL_VELOCITY, id_array, dynamixel_.size(), dynamixel_velocity, 1, &log);
+  result = dxl_wb_->syncWrite(SYNC_WRITE_HANDLER_FOR_GOAL_VELOCITY, omni_mode_?snd_id_array:id_array, omni_mode_?snd_id_cnt:2, dynamixel_velocity, 1, &log);
   if (result == false)
   {
     ROS_ERROR("%s", log);
