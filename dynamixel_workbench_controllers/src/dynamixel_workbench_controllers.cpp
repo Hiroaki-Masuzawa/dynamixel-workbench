@@ -574,7 +574,7 @@ void DynamixelController::commandVelocityCallback(const geometry_msgs::Twist::Co
       }
       if (actuator_idx != -1)
       {
-        wheel_velocity[snd_id_cnt] = -robot_lin_vel_x * cos(angle) +  robot_lin_vel_y * sin(angle) - (robot_ang_vel * wheel_separation_ / 2);
+        wheel_velocity[snd_id_cnt] = -robot_lin_vel_x * cos(angle) - robot_lin_vel_y * sin(angle) - (robot_ang_vel * wheel_separation_ / 2);
         snd_id_array[snd_id_cnt] = id_array[actuator_idx];
         snd_id_cnt++;
       }
