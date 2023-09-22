@@ -674,6 +674,7 @@ void DynamixelController::writeCallback(const ros::TimerEvent&)
       ROS_ERROR("%s", log);
     }
 
+    /*
     position_cnt++;
     if (position_cnt >= jnt_tra_msg_->points[point_cnt].positions.size())
     {
@@ -687,6 +688,15 @@ void DynamixelController::writeCallback(const ros::TimerEvent&)
 
         ROS_INFO("Complete Execution");
       }
+    */
+    point_cnt++;
+    if (point_cnt >= jnt_tra_msg_->points.size())
+    {
+      is_moving_ = false;
+      point_cnt = 0;
+      position_cnt = 0;
+
+      ROS_INFO("Complete Execution");
     }
   }
 
