@@ -82,11 +82,11 @@ bool JointOperator::getTrajectoryInfo(const std::string yaml_file, trajectory_ms
       ROS_INFO("motion_name : %s, step : %f", name.c_str(), motion_name["step"][size].as<double>());
     }
 
-    // if (motion_name["time_from_start"] == NULL)
-    // {
-    //   ROS_ERROR("Please check time_from_start. It must be set time_from_start each step");
-    //   return 0;
-    // }
+    if (!motion_name["time_from_start"])
+    {
+      ROS_ERROR("Please check time_from_start. It must be set time_from_start each step");
+      return 0;
+    }
 
     jnt_tra_point.time_from_start.fromSec(motion_name["time_from_start"].as<double>());
 
