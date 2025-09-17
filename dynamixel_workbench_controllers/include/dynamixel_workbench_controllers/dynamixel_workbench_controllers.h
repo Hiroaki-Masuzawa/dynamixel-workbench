@@ -75,6 +75,9 @@ class DynamixelController
   DynamixelWorkbench *dxl_wb_;
 
   std::map<std::string, uint32_t> dynamixel_;
+  std::map<uint32_t, std::string> name_from_id_;
+  std::map<std::string, std::string> dynamixel_group_;
+  std::map<std::string, std::vector<uint8_t>> group_id_list_;
   std::map<std::string, const ControlItem*> control_items_;
   std::vector<std::pair<std::string, ItemValue>> dynamixel_info_;
   dynamixel_workbench_msgs::DynamixelStateList dynamixel_state_list_;
