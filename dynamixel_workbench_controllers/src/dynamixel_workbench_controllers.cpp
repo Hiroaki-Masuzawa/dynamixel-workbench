@@ -167,7 +167,7 @@ bool DynamixelController::initDynamixels(void)
     {
       if (dxl.first == info.first)
       {
-        if (info.second.item_name != "ID" && info.second.item_name != "Baud_Rate")
+        if (info.second.item_name != "ID" && info.second.item_name != "Baud_Rate" && info.second.item_name != "group")
         {
           bool result = dxl_wb_->itemWrite((uint8_t)dxl.second, info.second.item_name.c_str(), info.second.value, &log);
           if (result == false)
@@ -281,81 +281,185 @@ bool DynamixelController::initSDKHandlers(void)
   return result;
 }
 
+// bool DynamixelController::getPresentPosition(std::vector<std::string> dxl_name)
+// {
+//   bool result = false;
+//   const char *log = NULL;
+
+//   int32_t get_position[dxl_name.size()];
+
+//   uint8_t id_array[dxl_name.size()];
+//   uint8_t id_cnt = 0;
+
+//   for (auto const &name : dxl_name)
+//   {
+//     id_array[id_cnt++] = dynamixel_[name];
+//   }
+
+//   if (dxl_wb_->getProtocolVersion() == 2.0f)
+//   {
+//     result = dxl_wb_->syncRead(SYNC_READ_HANDLER_FOR_PRESENT_POSITION_VELOCITY_CURRENT,
+//                                id_array,
+//                                dxl_name.size(),
+//                                &log);
+//     if (result == false)
+//     {
+//       ROS_ERROR("%s", log);
+//     }
+
+//     WayPoint wp;
+
+//     result = dxl_wb_->getSyncReadData(SYNC_READ_HANDLER_FOR_PRESENT_POSITION_VELOCITY_CURRENT,
+//                                       id_array,
+//                                       id_cnt,
+//                                       control_items_["Present_Position"]->address,
+//                                       control_items_["Present_Position"]->data_length,
+//                                       get_position,
+//                                       &log);
+
+//     if (result == false)
+//     {
+//       ROS_ERROR("%s", log);
+//     }
+//     else
+//     {
+//       for (uint8_t index = 0; index < id_cnt; index++)
+//       {
+//         wp.position = dxl_wb_->convertValue2Radian(id_array[index], get_position[index]);
+//         ROS_ERROR("%u %f", get_position[index], wp.position);
+//         wp.velocity = 0.0f;
+//         wp.acceleration = 0.0f;
+//         pre_goal_.push_back(wp);
+//       }
+//     }
+//   }
+//   else if (dxl_wb_->getProtocolVersion() == 1.0f)
+//   {
+//     WayPoint wp;
+//     uint32_t read_position;
+//     for (auto const &dxl : dynamixel_)
+//     {
+//       result = dxl_wb_->readRegister((uint8_t)dxl.second,
+//                                      control_items_["Present_Position"]->address,
+//                                      control_items_["Present_Position"]->data_length,
+//                                      &read_position,
+//                                      &log);
+//       if (result == false)
+//       {
+//         ROS_ERROR("%s", log);
+//       }
+
+//       wp.position = dxl_wb_->convertValue2Radian((uint8_t)dxl.second, read_position);
+//       wp.velocity = 0.0f;
+//       wp.acceleration = 0.0f;
+//       pre_goal_.push_back(wp);
+//     }
+//   }
+
+//   return result;
+// }
+
 bool DynamixelController::getPresentPosition(std::vector<std::string> dxl_name)
 {
+
   bool result = false;
   const char *log = NULL;
-
-  int32_t get_position[dxl_name.size()];
-
-  uint8_t id_array[dxl_name.size()];
-  uint8_t id_cnt = 0;
-
-  for (auto const &name : dxl_name)
+  std::vector<dynamixel_workbench_msgs::DynamixelState> states;
+  
+  for (auto &group_pair : group_id_list_)
   {
-    id_array[id_cnt++] = dynamixel_[name];
-  }
+    const std::string &group_name = group_pair.first;
+    const std::vector<uint8_t> &id_vec_vec = group_pair.second;
+    if (id_vec_vec.empty())
+      continue;
+    uint8_t id_vec[id_vec_vec.size()];
+    uint8_t id_vec_size = id_vec_vec.size();
+    for(int i=0;i<id_vec_vec.size();i++){
+      id_vec[i] = id_vec_vec[i];
+    }
 
-  if (dxl_wb_->getProtocolVersion() == 2.0f)
-  {
-    result = dxl_wb_->syncRead(SYNC_READ_HANDLER_FOR_PRESENT_POSITION_VELOCITY_CURRENT,
-                               id_array,
-                               dxl_name.size(),
-                               &log);
+    // syncRead に使う handler, address, length etc は既存の control_items_ を使う
+    result = dxl_wb_->syncRead(
+        SYNC_READ_HANDLER_FOR_PRESENT_POSITION_VELOCITY_CURRENT,
+        id_vec, id_vec_size,
+        &log);
+    if (!result)
+    {
+      ROS_ERROR("syncRead failed for group %s: %s", group_name.c_str(), log);
+      continue; // グループ単位でスキップ
+    }
+
+    // getSyncReadData の呼び出し：各項目 (position, velocity, current) ごと
+    std::vector<int32_t> pos_vec(id_vec_size);
+    std::vector<int32_t> vel_vec(id_vec_size);
+    std::vector<int32_t> cur_vec(id_vec_size);
+
+    result = dxl_wb_->getSyncReadData(
+        SYNC_READ_HANDLER_FOR_PRESENT_POSITION_VELOCITY_CURRENT,
+        id_vec, id_vec_size,
+        control_items_["Present_Position"]->address,
+        control_items_["Present_Position"]->data_length,
+        pos_vec.data(),
+        &log);
+    if (!result)
+    {
+      ROS_ERROR("getSyncReadData position failed for group %s: %s", group_name.c_str(), log);
+    }
+
+    result = dxl_wb_->getSyncReadData(
+        SYNC_READ_HANDLER_FOR_PRESENT_POSITION_VELOCITY_CURRENT,
+        id_vec, id_vec_size,
+        control_items_["Present_Velocity"]->address,
+        control_items_["Present_Velocity"]->data_length,
+        vel_vec.data(),
+        &log);
     if (result == false)
     {
-      ROS_ERROR("%s", log);
+      ROS_ERROR("getSyncReadData velocity failed for group %s: %s", group_name.c_str(), log);
     }
 
-    WayPoint wp;
-
-    result = dxl_wb_->getSyncReadData(SYNC_READ_HANDLER_FOR_PRESENT_POSITION_VELOCITY_CURRENT,
-                                      id_array,
-                                      id_cnt,
-                                      control_items_["Present_Position"]->address,
-                                      control_items_["Present_Position"]->data_length,
-                                      get_position,
-                                      &log);
-
+    result = dxl_wb_->getSyncReadData(
+        SYNC_READ_HANDLER_FOR_PRESENT_POSITION_VELOCITY_CURRENT,
+        id_vec, id_vec_size,
+        control_items_["Present_Current"]->address,
+        control_items_["Present_Current"]->data_length,
+        cur_vec.data(),
+        &log);
     if (result == false)
     {
-      ROS_ERROR("%s", log);
+      ROS_ERROR("getSyncReadData current failed for group %s: %s", group_name.c_str(), log);
     }
-    else
+
+    // 取得できたデータを dynamixel_state_list_ に格納
+    for (size_t i = 0; i < id_vec_size; ++i)
     {
-      for (uint8_t index = 0; index < id_cnt; index++)
-      {
-        wp.position = dxl_wb_->convertValue2Radian(id_array[index], get_position[index]);
-        wp.velocity = 0.0f;
-        wp.acceleration = 0.0f;
-        pre_goal_.push_back(wp);
-      }
+      std::string joint_name = name_from_id_[id_vec[i]];
+      dynamixel_workbench_msgs::DynamixelState  state;
+      // 填充
+      state.name = joint_name;
+      state.id = id_vec[i];
+      state.present_position = pos_vec[i];
+      state.present_velocity = vel_vec[i];
+      state.present_current = cur_vec[i];
+      states.push_back(state);
     }
   }
-  else if (dxl_wb_->getProtocolVersion() == 1.0f)
-  {
-    WayPoint wp;
-    uint32_t read_position;
-    for (auto const &dxl : dynamixel_)
-    {
-      result = dxl_wb_->readRegister((uint8_t)dxl.second,
-                                     control_items_["Present_Position"]->address,
-                                     control_items_["Present_Position"]->data_length,
-                                     &read_position,
-                                     &log);
-      if (result == false)
-      {
-        ROS_ERROR("%s", log);
+  
+  for(int i=0;i<dxl_name.size();i++){
+      for(int j=0;j<states.size();j++){
+          if(dxl_name[i]==states[j].name){
+            WayPoint wp;
+		        wp.position = dxl_wb_->convertValue2Radian(states[j].id, states[j].present_position);
+		        // ROS_ERROR("%d %d %d %f", i, j, states[j].present_position, wp.position);
+		        wp.velocity = 0.0f;
+		        wp.acceleration = 0.0f;
+		        pre_goal_.push_back(wp);
+          }
       }
-
-      wp.position = dxl_wb_->convertValue2Radian((uint8_t)dxl.second, read_position);
-      wp.velocity = 0.0f;
-      wp.acceleration = 0.0f;
-      pre_goal_.push_back(wp);
-    }
   }
 
   return result;
+
 }
 
 void DynamixelController::initPublisher()
@@ -385,20 +489,25 @@ void DynamixelController::readCallback(const ros::TimerEvent &)
   bool result = false;
   const char *log = NULL;
 
-  dynamixel_workbench_msgs::DynamixelState dynamixel_state[dynamixel_.size()];
+  // dynamixel_workbench_msgs::DynamixelState dynamixel_state[dynamixel_.size()];
   dynamixel_state_list_.dynamixel_state.clear();
 
   for (auto &group_pair : group_id_list_)
   {
     const std::string &group_name = group_pair.first;
-    const std::vector<uint8_t> &id_vec = group_pair.second;
-    if (id_vec.empty())
+    const std::vector<uint8_t> &id_vec_vec = group_pair.second;
+    if (id_vec_vec.empty())
       continue;
+    uint8_t id_vec[id_vec_vec.size()];
+    uint8_t id_vec_size = id_vec_vec.size();
+    for(int i=0;i<id_vec_vec.size();i++){
+      id_vec[i] = id_vec_vec[i];
+    }
 
     // syncRead に使う handler, address, length etc は既存の control_items_ を使う
     result = dxl_wb_->syncRead(
         SYNC_READ_HANDLER_FOR_PRESENT_POSITION_VELOCITY_CURRENT,
-        id_vec.data(), id_vec.size(),
+        id_vec, id_vec_size,
         &log);
     if (!result)
     {
@@ -407,13 +516,13 @@ void DynamixelController::readCallback(const ros::TimerEvent &)
     }
 
     // getSyncReadData の呼び出し：各項目 (position, velocity, current) ごと
-    std::vector<int32_t> pos_vec(id_vec.size());
-    std::vector<int32_t> vel_vec(id_vec.size());
-    std::vector<int32_t> cur_vec(id_vec.size());
+    std::vector<int32_t> pos_vec(id_vec_size);
+    std::vector<int32_t> vel_vec(id_vec_size);
+    std::vector<int32_t> cur_vec(id_vec_size);
 
     result = dxl_wb_->getSyncReadData(
         SYNC_READ_HANDLER_FOR_PRESENT_POSITION_VELOCITY_CURRENT,
-        id_vec.data(), id_vec.size(),
+        id_vec, id_vec_size,
         control_items_["Present_Position"]->address,
         control_items_["Present_Position"]->data_length,
         pos_vec.data(),
@@ -425,7 +534,7 @@ void DynamixelController::readCallback(const ros::TimerEvent &)
 
     result = dxl_wb_->getSyncReadData(
         SYNC_READ_HANDLER_FOR_PRESENT_POSITION_VELOCITY_CURRENT,
-        id_vec.data(), id_vec.size(),
+        id_vec, id_vec_size,
         control_items_["Present_Velocity"]->address,
         control_items_["Present_Velocity"]->data_length,
         vel_vec.data(),
@@ -437,7 +546,7 @@ void DynamixelController::readCallback(const ros::TimerEvent &)
 
     result = dxl_wb_->getSyncReadData(
         SYNC_READ_HANDLER_FOR_PRESENT_POSITION_VELOCITY_CURRENT,
-        id_vec.data(), id_vec.size(),
+        id_vec, id_vec_size,
         control_items_["Present_Current"]->address,
         control_items_["Present_Current"]->data_length,
         cur_vec.data(),
@@ -448,10 +557,10 @@ void DynamixelController::readCallback(const ros::TimerEvent &)
     }
 
     // 取得できたデータを dynamixel_state_list_ に格納
-    for (size_t i = 0; i < id_vec.size(); ++i)
+    for (size_t i = 0; i < id_vec_size; ++i)
     {
       std::string joint_name = name_from_id_[id_vec[i]];
-
+      dynamixel_workbench_msgs::DynamixelState  state;
       // 填充
       state.name = joint_name;
       state.id = id_vec[i];
@@ -695,11 +804,20 @@ void DynamixelController::writeCallback(const ros::TimerEvent &)
           continue;
         }
         dynamixel_position[index] = dxl_wb_->convertRadian2Value(motor_id, jnt_tra_msg_->points[point_cnt].positions.at(msg_joint_idx));
+        // ROS_ERROR("index %d msgidx %d value %d %d/%d", index, msg_joint_idx, dynamixel_position[index], point_cnt, jnt_tra_msg_->points.size());
+      }
+      uint8_t id_vec_size = id_vec.size();
+      uint8_t id_vec_arr[id_vec_size];
+      int32_t dynamixel_position_arr[id_vec_size];
+      for(int i=0;i<id_vec_size;i++)
+      {
+        id_vec_arr[i] = id_vec[i];
+        dynamixel_position_arr[i] = dynamixel_position[i];
       }
       result = dxl_wb_->syncWrite(
           SYNC_WRITE_HANDLER_FOR_GOAL_POSITION,
-          id_vec.data(), id_vec.size(),
-          dynamixel_position, 1, &log);
+          id_vec_arr, id_vec_size,
+          dynamixel_position_arr, 1, &log);
       if (result == false)
       {
         ROS_ERROR("%s", log);
@@ -710,7 +828,7 @@ void DynamixelController::writeCallback(const ros::TimerEvent &)
     {
       is_moving_ = false;
       point_cnt = 0;
-      position_cnt = 0;
+      // position_cnt = 0;
 
       ROS_INFO("Complete Execution");
     }
@@ -735,8 +853,10 @@ void DynamixelController::trajectoryMsgCallback(const trajectory_msgs::JointTraj
     pre_goal_.clear();
 
     result = getPresentPosition(msg->joint_names);
-    if (result == false)
+    if (result == false && true){
       ROS_ERROR("Failed to get Present Position");
+      return;
+    }
 
     for (auto const &joint : msg->joint_names)
     {
@@ -751,9 +871,11 @@ void DynamixelController::trajectoryMsgCallback(const trajectory_msgs::JointTraj
       uint8_t cnt = 0;
       while (cnt < msg->points.size())
       {
+        // ROS_ERROR("debug %d %d", cnt, msg->points.size());
         std::vector<WayPoint> goal;
         for (std::vector<int>::size_type id_num = 0; id_num < msg->points[cnt].positions.size(); id_num++)
         {
+          // ROS_ERROR("%d", id_num);
           wp.position = msg->points[cnt].positions.at(id_num);
 
           if (msg->points[cnt].velocities.size() != 0)
@@ -768,7 +890,7 @@ void DynamixelController::trajectoryMsgCallback(const trajectory_msgs::JointTraj
 
           goal.push_back(wp);
         }
-
+        // ROS_ERROR("%s %d",__FILE__,__LINE__);
         if (use_moveit_ == true)
         {
           trajectory_msgs::JointTrajectoryPoint jnt_tra_point_msg;
@@ -794,18 +916,23 @@ void DynamixelController::trajectoryMsgCallback(const trajectory_msgs::JointTraj
           else
             move_time = msg->points[cnt].time_from_start.toSec() - msg->points[cnt - 1].time_from_start.toSec();
 
+        // ROS_ERROR("%s %d %d %d",__FILE__,__LINE__, pre_goal_.size(), goal.size());
           jnt_tra_->init(move_time,
                          write_period_,
                          pre_goal_,
                          goal);
+        // ROS_ERROR("%s %d",__FILE__,__LINE__);
 
           std::vector<WayPoint> way_point;
           trajectory_msgs::JointTrajectoryPoint jnt_tra_point_msg;
 
+        // ROS_ERROR("%s %d",__FILE__,__LINE__);
           for (double index = 0.0; index < move_time; index = index + write_period_)
           {
+        // ROS_ERROR("%s %d",__FILE__,__LINE__);
             way_point = jnt_tra_->getJointWayPoint(index);
 
+        // ROS_ERROR("%s %d",__FILE__,__LINE__);
             for (uint8_t id_num = 0; id_num < id_cnt; id_num++)
             {
               jnt_tra_point_msg.positions.push_back(way_point[id_num].position);
@@ -821,6 +948,7 @@ void DynamixelController::trajectoryMsgCallback(const trajectory_msgs::JointTraj
 
           pre_goal_ = goal;
           cnt++;
+          // ROS_ERROR("%d", cnt);
         }
       }
       ROS_INFO("Succeeded to get joint trajectory!");
