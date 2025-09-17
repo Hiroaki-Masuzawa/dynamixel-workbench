@@ -104,6 +104,8 @@ class DynamixelController
   std::vector<int> actuator_id_;
   std::vector<double> actuator_mounting_angle_;
 
+  uint32_t point_cnt;
+
  public:
   DynamixelController();
   ~DynamixelController();

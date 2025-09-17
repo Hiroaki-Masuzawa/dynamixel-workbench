@@ -96,23 +96,32 @@ bool DynamixelController::getDynamixelsInfo(const std::string yaml_file)
     }
 
     YAML::Node item = dynamixel[name];
+    
+    std::string group_name = "default";
+    if (item["group"])
+    {
+      group_name = item["group"].as<std::string>();
+    }
+    dynamixel_group_[name] = group_name;
+    ROS_ERROR("%s %s", name.c_str(), group_name.c_str());
+
     for (YAML::const_iterator it_item = item.begin(); it_item != item.end(); it_item++)
     {
       std::string item_name = it_item->first.as<std::string>();
+      if (item_name == "group")
+      {
+        continue;
+      }
+
       int32_t value = it_item->second.as<int32_t>();
 
       if (item_name == "ID")
       {
-        dynamixel_[name] = value;
-        name_from_id_[value] = name;
+        int32_t id = it_item->second.as<int32_t>();
+        dynamixel_[name] = id;
+        name_from_id_[id] = name;
       }
 
-      std::string group_name = "default";
-      if (item["group"])
-      {
-        group_name = item["group"].as<std::string>();
-      }
-      dynamixel_group_[name] = group_name;
 
       ItemValue item_value = {item_name, value};
       std::pair<std::string, ItemValue> info(name, item_value);
@@ -772,7 +781,7 @@ void DynamixelController::writeCallback(const ros::TimerEvent &)
 #ifdef DEBUG
   static double priv_pub_secs = ros::Time::now().toSec();
 #endif
-  static uint32_t point_cnt = 0;
+  // static uint32_t point_cnt = 0;
   bool result = false;
   const char *log = NULL;
   if (is_moving_ == true)
@@ -846,8 +855,11 @@ void DynamixelController::trajectoryMsgCallback(const trajectory_msgs::JointTraj
   bool result = false;
   WayPoint wp;
 
-  if (is_moving_ == false)
+  if (is_moving_ == false || true)
   {
+    // if(is_moving_){
+      point_cnt = 0;
+    // }
     jnt_tra_msg_->joint_names.clear();
     jnt_tra_msg_->points.clear();
     pre_goal_.clear();
